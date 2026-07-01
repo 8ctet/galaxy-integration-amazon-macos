@@ -1,0 +1,16 @@
+# Build output
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# macOS
+.DS_Store
+
+# Local test credentials & logs — NEVER commit Amazon tokens
+tools/.creds.json
+tools/.amzn_*.json
+.amzn_*.json
+*.log

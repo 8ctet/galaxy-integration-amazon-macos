@@ -1,0 +1,10 @@
+# Runtime dependencies of the shipped plugin: NONE beyond the vendored GOG
+# Galaxy API (galaxy.plugin.api v0.69) and the Python 3.7 standard library.
+#
+# Vendored at build time (build.py) by copying from already-installed plugins:
+#   - galaxy.plugin.api==0.69.0   (the `galaxy/` package)
+#   - certifi                     (the `certifi/` package — REQUIRED: Galaxy's
+#                                   bundled Python has no usable system CA bundle)
+#
+# Both are pure-Python, so no native wheels are compiled and the plugin runs
+# as-is on Galaxy's CPython 3.7 / x86_64.

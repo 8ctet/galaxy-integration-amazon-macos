@@ -1,0 +1,9 @@
+{
+    "tag_name": "0.1.0",
+    "assets": [
+        {
+            "name": "amazon-galaxy-plugin.zip",
+            "browser_download_url": "https://github.com/8ctet/galaxy-integration-amazon-macos/releases/download/0.1.0/amazon-galaxy-plugin.zip"
+        }
+    ]
+}
