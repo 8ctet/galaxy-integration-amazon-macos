@@ -148,6 +148,11 @@ def build(galaxy_src_override):
     with open(os.path.join(out, "manifest.json"), "w") as fh:
         json.dump(MANIFEST, fh, indent=4, ensure_ascii=False)
 
+    # Ship the README inside the plugin folder too (matches other Galaxy plugins).
+    readme = os.path.join(ROOT, "README.md")
+    if os.path.isfile(readme):
+        shutil.copy2(readme, os.path.join(out, "README.md"))
+
     # Auto-update descriptor kept at the repo root (GOG fetches it via update_url).
     current_version = {
         "tag_name": PLUGIN_VERSION,
