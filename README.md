@@ -1,4 +1,102 @@
-# Amazon Games — intégration GOG Galaxy (macOS)
+# Amazon Games — GOG Galaxy integration (macOS)
+
+*🇬🇧 English first · 🇫🇷 version française plus bas*
+
+Syncs your **Amazon Games library** into GOG Galaxy on macOS, using Amazon's web
+API (no native Amazon client exists on Mac). Inspired by
+[Nile](https://github.com/imLinguin/nile) (Heroic's Amazon backend) for the
+authentication flow and the library API, and by
+[Rall3n/galaxy-integration-amazon](https://github.com/Rall3n/galaxy-integration-amazon)
+for the GOG patterns.
+
+## What it does / doesn't
+
+| Feature | macOS |
+|---|---|
+| Amazon account login (OAuth2 + PKCE) | ✅ |
+| Owned-games list + titles | ✅ |
+| OS-compatibility (Windows) badge | ✅ |
+| Achievements | ❌ — Amazon exposes no public achievements API |
+| Playtime | ❌ — same, no public API |
+| Installed games / launch / install / uninstall | ❌ — needs the Amazon Games client (Windows only) |
+
+> Games appear as "owned". They are Windows binaries: not installable/launchable
+> from a Mac, which is expected.
+
+## ⚠️ Critical detail: numeric `user_id`
+
+Before any import, GOG Galaxy "links" the account through its backend
+`external-accounts.gog.com/.../platform_login_sessions/amazon`. **That backend
+returns HTTP 500 if the `user_id` the plugin returns is not purely numeric.**
+Amazon's raw id is `amzn1.account.XXXX` (with dots) → linking fails silently →
+the import never starts → the integration shows "Connected" for ~2 s then flips
+back to "Not connected" (no error in the plugin log; the cause is only visible in
+`/Users/Shared/GOG.com/Galaxy/Logs/GalaxyClient.log`: `Failed linking accounts` /
+`Importation cannot start, as Platform 'amazon' was not linked`).
+
+The plugin therefore exposes a **stable numeric `user_id`** derived from the
+Amazon id (`amazon_auth.py` → `register_device`). Every platform that works
+(Steam, PSN, Xbox, Humble) uses numeric ids — **do not revert to the raw Amazon id.**
+
+## Install
+
+1. Download `amazon-galaxy-plugin.zip` from the
+   [Releases page](https://github.com/8ctet/galaxy-integration-amazon-macos/releases).
+2. Unzip it into the GOG Galaxy plugins folder (the archive already contains the
+   `amazon_<guid>/` folder):
+   ```
+   ~/Library/Application Support/GOG.com/Galaxy/plugins/installed/
+   ```
+3. Quit and relaunch GOG Galaxy, then **Connect → Amazon** and sign in. Your
+   library appears in the library view.
+
+## Troubleshooting
+
+- **Plugin logs**: `~/Library/Application Support/GOG.com/Galaxy/Logs/plugin-amazon-*.log`
+  (tokens are never written there). The account-linking cause, if any, is in the
+  client log `/Users/Shared/GOG.com/Galaxy/Logs/GalaxyClient.log`.
+- **TLS / certificates**: Galaxy's bundled Python has no system CA bundle
+  (otherwise `CERTIFICATE_VERIFY_FAILED`). The plugin ships `certifi` and uses it
+  by default.
+- **Library 401**: the plugin refreshes the token and retries once; the header
+  used is `x-amzn-token` (not `Authorization: bearer`).
+- **Non-US account (e.g. FR)**: `marketPlaceId` is US (`ATVPDKIKX0DER`) like Nile;
+  entitlements are account-scoped, so the full library still loads.
+- **Private Amazon endpoints**: they can change without notice.
+
+## Architecture
+
+```
+src/
+  plugin.py         AmazonPlugin(Plugin) — GOG glue (auth, owned games, OS compat)
+  amazon_auth.py    OAuth2 + PKCE: register / refresh / token state
+  amazon_library.py Entitlements + pagination
+  http_client.py    Async HTTP client over urllib (zero native deps)
+  consts.py         Amazon constants & endpoints
+  version.py
+tools/standalone_check.py   Off-Galaxy test harness
+build.py                    Vendors galaxy/ + certifi/ + writes manifest + installs
+```
+
+**Key choice**: no native dependencies. The `galaxy.api.plugin` import chain is
+100 % stdlib (`aiohttp` is only used by `galaxy/http.py`, which is never
+imported), and the HTTP client relies on `urllib`. The plugin therefore runs
+as-is on the Python 3.7 / x86_64 that GOG Galaxy bundles, with no wheel compilation.
+
+## Credits
+
+- API: [gogcom/galaxy-integrations-python-api](https://github.com/gogcom/galaxy-integrations-python-api)
+- Amazon flow: [imLinguin/nile](https://github.com/imLinguin/nile)
+- Original Windows plugin: [Rall3n/galaxy-integration-amazon](https://github.com/Rall3n/galaxy-integration-amazon)
+
+## License
+
+[MIT](LICENSE) © 2026 8ctet. The Amazon protocol details come from the community
+reverse-engineering in [Nile](https://github.com/imLinguin/nile).
+
+---
+
+# 🇫🇷 Amazon Games — intégration GOG Galaxy (macOS)
 
 Synchronise votre **ludothèque Amazon Games** dans GOG Galaxy sur macOS, via les
 API web d'Amazon (aucun client Amazon natif n'existe sur Mac). Inspiré de
@@ -37,56 +135,31 @@ Le plugin expose donc un `user_id` **numérique stable** dérivé de l'ID Amazon
 (Steam, PSN, Xbox, Humble) utilisent des `user_id` numériques — **ne pas revenir à
 l'ID Amazon brut.**
 
-## Pré-requis
+## Installer
 
-- macOS avec **GOG Galaxy 2.0** installé (embarque son propre Python 3.7 x86_64).
-- Un compte Amazon possédant des jeux Amazon Games / Prime Gaming.
-
-## Construire & installer
-
-```bash
-cd "Plugin GOG Amazon"
-PY37="/Applications/GOG Galaxy.app/Contents/Frameworks/Python.framework/Versions/3.7/bin/python3.7"
-
-# Construit dans dist/amazon_<guid>/ (vendorise l'API GOG v0.69 depuis un plugin déjà installé)
-"$PY37" build.py
-
-# …puis installe directement dans GOG Galaxy :
-"$PY37" build.py --install
-```
-
-Quittez puis relancez GOG Galaxy → **Connect → Amazon** → connectez-vous dans la
-fenêtre Amazon. Votre ludothèque apparaît dans la bibliothèque.
-
-## Tester sans Galaxy (recommandé en premier)
-
-Valide l'authentification et la récupération de la ludothèque, avec une sortie
-lisible et facile à déboguer :
-
-```bash
-"$PY37" tools/standalone_check.py
-# 1) ouvrez l'URL affichée dans un navigateur, connectez-vous
-# 2) collez l'URL https://www.amazon.com/?...openid.oa2.authorization_code=... finale
-# 3) le script affiche le nombre de jeux + les premiers titres
-"$PY37" tools/standalone_check.py --refresh   # teste le rafraîchissement du token
-```
+1. Téléchargez `amazon-galaxy-plugin.zip` depuis la
+   [page Releases](https://github.com/8ctet/galaxy-integration-amazon-macos/releases).
+2. Dézippez l'archive dans le dossier des plugins de GOG Galaxy (l'archive contient
+   déjà le dossier `amazon_<guid>/`) :
+   ```
+   ~/Library/Application Support/GOG.com/Galaxy/plugins/installed/
+   ```
+3. Quittez puis relancez GOG Galaxy → **Connect → Amazon** → connectez-vous. Votre
+   ludothèque apparaît dans la bibliothèque.
 
 ## Dépannage
 
 - **Logs du plugin** : `~/Library/Application Support/GOG.com/Galaxy/Logs/plugin-amazon-*.log`
-  (les tokens n'y sont jamais écrits).
+  (les tokens n'y sont jamais écrits). La cause d'un échec de liaison de compte
+  est dans le log client `/Users/Shared/GOG.com/Galaxy/Logs/GalaxyClient.log`.
 - **TLS / certificats** : le Python embarqué par Galaxy n'a pas de bundle CA
-  système (sinon : `CERTIFICATE_VERIFY_FAILED`). Le plugin embarque donc `certifi`
-  (vendorisé automatiquement par `build.py`, comme les autres plugins Galaxy) et
-  l'utilise par défaut. Si le build affiche « WARNING: no certifi found »,
-  lance `pip install certifi --target dist/amazon_<guid>`.
+  système (sinon `CERTIFICATE_VERIFY_FAILED`). Le plugin embarque `certifi` et
+  l'utilise par défaut.
 - **401 sur la ludothèque** : le plugin rafraîchit le token puis réessaie une fois ;
   l'en-tête utilisé est `x-amzn-token` (et non `Authorization: bearer`).
 - **Compte non-US (ex. FR)** : le `marketPlaceId` est l'US (`ATVPDKIKX0DER`) comme
-  Nile ; les entitlements étant liés au compte, la ludothèque complète remonte
-  normalement. Si un jeu manque, ouvrez un ticket.
-- **Endpoints Amazon privés** : ils peuvent changer sans préavis. Lancez d'abord
-  `tools/standalone_check.py` pour confirmer.
+  Nile ; les entitlements étant liés au compte, la ludothèque complète remonte.
+- **Endpoints Amazon privés** : ils peuvent changer sans préavis.
 
 ## Architecture
 
@@ -99,7 +172,7 @@ src/
   consts.py         Constantes & endpoints Amazon
   version.py
 tools/standalone_check.py   Harnais de test hors-Galaxy
-build.py                    Vendoring de galaxy/ + manifest + install
+build.py                    Vendoring de galaxy/ + certifi/ + manifest + install
 ```
 
 **Choix clé** : aucune dépendance native. La chaîne d'import de `galaxy.api.plugin`
@@ -112,26 +185,6 @@ Python 3.7 / x86_64 embarqué par Galaxy, sans compilation de wheels.
 - API : [gogcom/galaxy-integrations-python-api](https://github.com/gogcom/galaxy-integrations-python-api)
 - Flux Amazon : [imLinguin/nile](https://github.com/imLinguin/nile)
 - Plugin Windows original : [Rall3n/galaxy-integration-amazon](https://github.com/Rall3n/galaxy-integration-amazon)
-
-## Publier sur GitHub
-
-1. Éditez `GITHUB_REPO` en haut de `build.py` (mettez votre `owner/repo`), puis
-   relancez `build.py` — il régénère `manifest.json` (`url` + `update_url`) et
-   `current_version.json`.
-2. Créez le dépôt et poussez :
-   ```bash
-   gh repo create <owner>/galaxy-integration-amazon-macos --public --source=. --push
-   # ou manuellement :
-   git remote add origin https://github.com/<owner>/galaxy-integration-amazon-macos.git
-   git push -u origin main
-   ```
-3. **Mise à jour auto (optionnel)** : `build.py --zip` produit
-   `dist/amazon-galaxy-plugin.zip`. Créez une release GitHub taguée comme
-   `PLUGIN_VERSION` (ex. `0.1.0`) et attachez-y ce zip. Galaxy lit
-   `current_version.json` via `update_url` et proposera la mise à jour.
-
-> `dist/` et les fichiers de tokens de test sont ignorés par git (`.gitignore`) —
-> ne committez jamais `tools/.creds.json` / `.amzn_*.json`.
 
 ## Licence
 
